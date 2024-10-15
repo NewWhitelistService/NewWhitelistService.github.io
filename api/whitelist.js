@@ -90,9 +90,9 @@ const setApiKey = async (apiKey, userId, guildId) => {
         whitelist[productName].ownerId = userId; // Set the owner ID
         whitelist[productName].guildId = guildId; // Set the guild ID
         await updateWhitelist(whitelist);
-        return { status: 'success', message: 'API key set successfully.' };
+        return { status: 'success' }; // Return success
     } else {
-        return { status: 'error', message: 'Invalid API key.' };
+        return { status: 'error' }; // Invalid API key
     }
 };
 
@@ -151,28 +151,22 @@ const checkAndSetHwid = async (key, hwid, productName) => {
             // Check if the HWID for the key is null
             if (keys[key].hwid === null) {
                 // Set the HWID
-                keys[key].hwid = hwid;
+                keys[key].hwid = hwid; // Set the current HWID
                 await updateWhitelist(whitelist);
-                return { status: 'success', message: 'HWID set successfully.' };
+                return { status: 'success' }; // Return success without message
             } else {
                 // Compare the HWID with the current HWID in the whitelist
                 if (keys[key].hwid === hwid) {
-                    return { 
-                        status: 'success', 
-                        message: 'HWID is already set correctly.' 
-                    };
+                    return { status: 'success' }; // Return success without message
                 } else {
-                    return { 
-                        status: 'error', 
-                        message: `HWID does not match. Current HWID: ${keys[key].hwid}` 
-                    };
+                    return { status: 'error' }; // HWID does not match
                 }
             }
         } else {
-            return { status: 'error', message: 'Invalid key.' };
+            return { status: 'error' }; // Invalid key
         }
     } else {
-        return { status: 'error', message: 'Invalid product.' };
+        return { status: 'error' }; // Invalid product
     }
 };
 
@@ -183,7 +177,7 @@ export default async function handler(req, res) {
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(productName); // productName is the product name
+                const result = await createProduct(apiKey); // apiKey is the product name
                 return res.status(200).json(result);
             } else if (action === 'setApiKey') {
                 const result = await setApiKey(apiKey, userId, guildId);
@@ -194,16 +188,16 @@ export default async function handler(req, res) {
             } else if (action === 'resetHwid') {
                 const result = await resetHwid(guildId, userId);
                 return res.status(200).json(result);
-            } else if (action === 'checkAndSetHwid') { // Add new action for checkAndSetHwid
+            } else if (action === 'checkAndSetHwid') {
                 const result = await checkAndSetHwid(key, hwid, productName);
                 return res.status(200).json(result);
             } else {
                 return res.status(400).json({ status: 'error', message: 'Invalid action.' });
             }
         } catch (error) {
-            return res.status(500).json({ error: error.message });
+            return res.status(500).json({ status: 'error', message: error.message });
         }
     } else {
-        return res.status(405).json({ error: 'Only POST requests are allowed' });
+        return res.status(405).json({ status: 'error', message: 'Only POST requests are allowed' });
     }
 }
