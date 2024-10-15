@@ -1,5 +1,4 @@
 import axios from 'axios';
-import crypto from 'crypto'; // Import crypto for API key generation
 
 const REPO_OWNER = 'NewWhitelistService'; // Your GitHub username
 const REPO_NAME = 'NewWhitelistService.github.io'; // Your repository name
@@ -51,60 +50,7 @@ const updateWhitelist = async (newWhitelist) => {
     }
 };
 
-// Function to generate a random API key
-const generateApiKey = () => {
-    return crypto.randomBytes(16).toString('hex'); // Generates a 32-character hex string
-};
-
-// Function to get the product name by API key
-const getProductByApiKey = async (apiKey) => {
-    const whitelist = await getWhitelist();
-    
-    for (const productName in whitelist) {
-        if (whitelist[productName].apiKey === apiKey) {
-            return productName;
-        }
-    }
-    
-    return null; // Return null if the API key is not found
-};
-
-// Function to create a new product
-const createProduct = async (productName, ownerId) => {
-    const whitelist = await getWhitelist();
-    
-    if (!whitelist[productName]) {
-        const apiKey = generateApiKey(); // Generate a new API key
-        whitelist[productName] = {
-            ownerId: ownerId,
-            keys: {},
-            apiKey: apiKey // Set the API key
-        };
-        await updateWhitelist(whitelist);
-        return { 
-            status: 'success', 
-            message: `Product ${productName} created.`,
-            APIKEY: apiKey // Return the generated API key
-        };
-    } else {
-        return { status: 'error', message: `Product ${productName} already exists.` };
-    }
-};
-
-// Function to set the API key for a product
-const setApiKey = async (productName, apiKey) => {
-    const whitelist = await getWhitelist();
-    
-    if (whitelist[productName]) {
-        whitelist[productName].apiKey = apiKey; // Set the API key
-        await updateWhitelist(whitelist);
-        return { status: 'success', message: `API Key set for product ${productName}.` };
-    } else {
-        return { status: 'error', message: `Product ${productName} does not exist.` };
-    }
-};
-
-// Function to create a random key
+// Function to generate a random key
 const generateRandomKey = () => {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
@@ -115,21 +61,65 @@ const generateRandomKey = () => {
     return result;
 };
 
-// Function to create a key for a product
-const createKey = async (productName) => {
+// Function to create a new product with an API key, owner ID, and guild ID
+const createProduct = async (productName) => {
     const whitelist = await getWhitelist();
-    
-    if (whitelist[productName]) {
-        const newKey = generateRandomKey();
-        whitelist[productName].keys[newKey] = {
-            hwid: null,
-            claimedBy: null,
-            guilds: []
+
+    if (!whitelist[productName]) {
+        whitelist[productName] = {
+            apiKey: generateRandomKey(), // Generate and assign a new API key
+            ownerId: null,
+            guildId: null,
+            keys: {}
         };
         await updateWhitelist(whitelist);
-        return { status: 'success', key: newKey };
+        return { status: 'success', apiKey: whitelist[productName].apiKey };
     } else {
-        return { status: 'error', message: `Product ${productName} does not exist.` };
+        return { status: 'error', message: `Product ${productName} already exists.` };
+    }
+};
+
+// Function to set the owner and guild ID for a product based on the API key
+const setApiKey = async (apiKey, userId, guildId) => {
+    const whitelist = await getWhitelist();
+
+    // Find the product based on the provided API key
+    const product = Object.values(whitelist).find(item => item.apiKey === apiKey);
+
+    // Check if the product exists
+    if (product) {
+        // Assign the user as the owner and set the guild ID if the owner is currently null
+        if (product.ownerId === null) {
+            product.ownerId = userId; // Assign the current user as the owner
+            product.guildId = guildId; // Assign the current guild ID
+            await updateWhitelist(whitelist);
+            return { status: 'success', message: 'Owner and guild ID assigned successfully.' };
+        } else {
+            return { status: 'error', message: 'Product already has an owner.' };
+        }
+    } else {
+        return { status: 'error', message: 'Product does not exist.' };
+    }
+};
+
+// Function to create a key for a product
+const createKey = async (productName, userId) => {
+    const whitelist = await getWhitelist();
+
+    if (whitelist[productName]) {
+        if (whitelist[productName].ownerId === userId) { // Check if the user is the owner
+            const newKey = generateRandomKey();
+            whitelist[productName].keys[newKey] = {
+                hwid: null,
+                claimedBy: null
+            };
+            await updateWhitelist(whitelist);
+            return { status: 'success', key: newKey };
+        } else {
+            return { status: 'error', message: 'Only the owner can create keys for this product.' };
+        }
+    } else {
+        return { status: 'error', message: 'Product does not exist.' };
     }
 };
 
@@ -138,43 +128,14 @@ const redeemKey = async (productName, key, userId) => {
     const whitelist = await getWhitelist();
 
     if (whitelist[productName] && whitelist[productName].keys[key]) {
-        if (!whitelist[productName].keys[key].claimedBy) {
-            whitelist[productName].keys[key].claimedBy = userId; // Link key with the user
+        const keyInfo = whitelist[productName].keys[key];
+
+        if (!keyInfo.claimedBy) {
+            keyInfo.claimedBy = userId; // Link key with the user
             await updateWhitelist(whitelist);
             return { status: 'success', message: 'Key redeemed successfully.' };
         } else {
             return { status: 'error', message: 'This key has already been claimed.' };
-        }
-    } else {
-        return { status: 'error', message: 'Invalid product or key.' };
-    }
-};
-
-// Function to check and set HWID for a key
-const checkAndSetHwid = async (productName, key, hwid) => {
-    const whitelist = await getWhitelist();
-
-    // Check if the product and key exist
-    if (whitelist[productName] && whitelist[productName].keys[key]) {
-        const keyInfo = whitelist[productName].keys[key];
-
-        // Check if the key has been claimed
-        if (keyInfo.claimedBy) {
-            // If HWID is already set, compare with the current HWID
-            if (keyInfo.hwid) {
-                if (keyInfo.hwid === hwid) {
-                    return { status: 'success', message: 'HWID matches.' };
-                } else {
-                    return { status: 'error', message: 'HWID does not match. Access denied.' };
-                }
-            } else {
-                // Set HWID if it's not set
-                keyInfo.hwid = hwid;
-                await updateWhitelist(whitelist);
-                return { status: 'success', message: 'HWID has been set.' };
-            }
-        } else {
-            return { status: 'error', message: 'Key must be redeemed before setting HWID.' };
         }
     } else {
         return { status: 'error', message: 'Invalid product or key.' };
@@ -187,7 +148,7 @@ const resetHwid = async (productName, key, userId) => {
 
     if (whitelist[productName] && whitelist[productName].keys[key]) {
         const keyInfo = whitelist[productName].keys[key];
-        
+
         if (keyInfo.claimedBy === userId) {
             keyInfo.hwid = null; // Reset HWID
             await updateWhitelist(whitelist);
@@ -203,34 +164,24 @@ const resetHwid = async (productName, key, userId) => {
 // Main handler
 export default async function handler(req, res) {
     if (req.method === 'POST') {
-        const { action, productName, userId, key, hwid, apiKey } = req.body;
+        const { action, productName, ownerId, guildId, userId, key, apiKey } = req.body;
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(productName, userId);
+                const result = await createProduct(productName);
                 return res.status(200).json(result);
             } else if (action === 'setApiKey') {
-                const result = await setApiKey(productName, apiKey);
+                const result = await setApiKey(apiKey, userId, guildId);
                 return res.status(200).json(result);
             } else if (action === 'createKey') {
-                const result = await createKey(productName);
+                const result = await createKey(productName, userId);
                 return res.status(200).json(result);
             } else if (action === 'redeemKey') {
                 const result = await redeemKey(productName, key, userId);
                 return res.status(200).json(result);
-            } else if (action === 'checkAndSetHwid') {
-                const result = await checkAndSetHwid(productName, key, hwid);
-                return res.status(200).json(result);
             } else if (action === 'resetHwid') {
                 const result = await resetHwid(productName, key, userId);
                 return res.status(200).json(result);
-            } else if (action === 'getProductByApiKey') {
-                const result = await getProductByApiKey(apiKey);
-                if (result) {
-                    return res.status(200).json({ status: 'success', productName: result });
-                } else {
-                    return res.status(404).json({ status: 'error', message: 'API Key not found.' });
-                }
             } else {
                 return res.status(400).json({ status: 'error', message: 'Invalid action.' });
             }
