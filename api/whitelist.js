@@ -61,7 +61,6 @@ const generateRandomKey = () => {
     return result;
 };
 
-// Function to create a new product with an API key
 const createProduct = async (productName) => {
     const whitelist = await getWhitelist();
     
