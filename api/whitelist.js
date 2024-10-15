@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const REPO_OWNER = 'NewWhitelistService'; // Your GitHub username
-const REPO_NAME = 'NewWhitelistService.github.io'; // Your repository name
+const REPO_NAME = 'service'; // Your repository name
 const FILE_PATH = 'whitelist.json'; // The path to your whitelist file
 
 const GITHUB_API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
