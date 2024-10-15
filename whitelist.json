@@ -4,5 +4,11 @@
     "ownerId": null,
     "guildId": null,
     "keys": {}
+  },
+  "test": {
+    "apiKey": "wPkNtipqx23vxF13dd4D",
+    "ownerId": null,
+    "guildId": null,
+    "keys": {}
   }
 }
