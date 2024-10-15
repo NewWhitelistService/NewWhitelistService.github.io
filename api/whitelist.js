@@ -61,7 +61,7 @@ const generateRandomKey = () => {
     return result;
 };
 
-// Function to create a new product with an API key, owner ID, and guild ID
+// Function to create a new product with an API key
 const createProduct = async (productName) => {
     const whitelist = await getWhitelist();
     
@@ -138,14 +138,52 @@ const resetHwid = async (guildId, userId) => {
     }
 };
 
+// Function to check and set HWID for a key
+const checkAndSetHwid = async (key, hwid, productName) => {
+    const whitelist = await getWhitelist();
+
+    // Check if the product exists in the whitelist
+    if (whitelist[productName]) {
+        const keys = whitelist[productName].keys;
+
+        // Check if the specified key exists in the product's keys
+        if (keys[key]) {
+            // Check if the HWID for the key is null
+            if (keys[key].hwid === null) {
+                // Set the HWID
+                keys[key].hwid = hwid;
+                await updateWhitelist(whitelist);
+                return { status: 'success', message: 'HWID set successfully.' };
+            } else {
+                // Compare the HWID with the current HWID in the whitelist
+                if (keys[key].hwid === hwid) {
+                    return { 
+                        status: 'success', 
+                        message: 'HWID is already set correctly.' 
+                    };
+                } else {
+                    return { 
+                        status: 'error', 
+                        message: `HWID does not match. Current HWID: ${keys[key].hwid}` 
+                    };
+                }
+            }
+        } else {
+            return { status: 'error', message: 'Invalid key.' };
+        }
+    } else {
+        return { status: 'error', message: 'Invalid product.' };
+    }
+};
+
 // Main API handler
 export default async function handler(req, res) {
     if (req.method === 'POST') {
-        const { action, userId, guildId, key, apiKey } = req.body;
+        const { action, userId, guildId, key, apiKey, hwid, productName } = req.body;
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(apiKey); // apiKey is the product name
+                const result = await createProduct(productName); // productName is the product name
                 return res.status(200).json(result);
             } else if (action === 'setApiKey') {
                 const result = await setApiKey(apiKey, userId, guildId);
@@ -155,6 +193,9 @@ export default async function handler(req, res) {
                 return res.status(200).json(result);
             } else if (action === 'resetHwid') {
                 const result = await resetHwid(guildId, userId);
+                return res.status(200).json(result);
+            } else if (action === 'checkAndSetHwid') { // Add new action for checkAndSetHwid
+                const result = await checkAndSetHwid(key, hwid, productName);
                 return res.status(200).json(result);
             } else {
                 return res.status(400).json({ status: 'error', message: 'Invalid action.' });
