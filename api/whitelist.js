@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { Buffer } from 'buffer'; // Explicit import to avoid buffer issues on Vercel
 
 const REPO_OWNER = 'NewWhitelistService'; // Your GitHub username
 const REPO_NAME = 'NewWhitelistService.github.io'; // Your repository name
@@ -8,42 +7,19 @@ const FILE_PATH = 'whitelist.json'; // The path to your whitelist file
 const GITHUB_API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Use GitHub token from environment variables
 
-if (!GITHUB_TOKEN) {
-    throw new Error("Missing GitHub token. Make sure it's set in the environment variables.");
-}
-
-// Helper to handle CORS (optional if you're calling this API from a client-side app)
-import Cors from 'cors';
-
-const cors = Cors({
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-});
-
-function runMiddleware(req, res, fn) {
-    return new Promise((resolve, reject) => {
-        fn(req, res, (result) => {
-            if (result instanceof Error) {
-                return reject(result);
-            }
-            return resolve(result);
-        });
-    });
-}
-
 // Function to fetch the whitelist.json file
 const getWhitelist = async () => {
     try {
-        console.log("Fetching whitelist...");
+        console.log("Fetching whitelist..."); // Log
         const response = await axios.get(GITHUB_API_URL, {
             headers: {
-                Authorization: `Bearer ${GITHUB_TOKEN}`,
+                Authorization: `token ${GITHUB_TOKEN}`,
             },
         });
-        console.log("GitHub API Response:", response.data);
         const content = Buffer.from(response.data.content, 'base64').toString();
         return JSON.parse(content);
     } catch (error) {
-        console.error("Failed to fetch whitelist:", error.toJSON ? error.toJSON() : error.message);
+        console.error("Failed to fetch whitelist:", error.response ? error.response.data : error.message);
         throw error;
     }
 };
@@ -51,37 +27,34 @@ const getWhitelist = async () => {
 // Function to update the whitelist.json file
 const updateWhitelist = async (newWhitelist) => {
     try {
-        console.log("Fetching current SHA...");
         const response = await axios.get(GITHUB_API_URL, {
             headers: {
-                Authorization: `Bearer ${GITHUB_TOKEN}`,
+                Authorization: `token ${GITHUB_TOKEN}`,
             },
         });
 
         const newContent = Buffer.from(JSON.stringify(newWhitelist, null, 2)).toString('base64');
-        const sha = response.data.sha;
+        const sha = response.data.sha; // Get the file's SHA
 
-        console.log("Updating whitelist with new SHA:", sha);
-
+        // Update the file in GitHub
         await axios.put(GITHUB_API_URL, {
             message: 'Update whitelist',
             content: newContent,
             sha: sha,
-            branch: 'main', // Adjust if using another branch
         }, {
             headers: {
-                Authorization: `Bearer ${GITHUB_TOKEN}`,
+                Authorization: `token ${GITHUB_TOKEN}`,
             },
         });
     } catch (error) {
-        console.error("Failed to update whitelist:", error.toJSON ? error.toJSON() : error.message);
+        console.error("Failed to update whitelist:", error.response ? error.response.data : error.message);
         throw error;
     }
 };
 
 // Function to generate a random key
 const generateRandomKey = () => {
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
     for (let i = 0; i < 20; i++) {
         const randomIndex = Math.floor(Math.random() * characters.length);
@@ -90,93 +63,95 @@ const generateRandomKey = () => {
     return result;
 };
 
-export default async function handler(req, res) {
-    await runMiddleware(req, res, cors); // Handle CORS
+// Function to redeem a key with HWID
+const redeemKeyWithHwid = async (product, userId, hwid) => {
+    const whitelist = await getWhitelist();
 
-    console.log("Received request:", req.method);
+    if (!whitelist[product]) {
+        throw new Error('Product not found');
+    }
 
-    if (req.method === 'GET') {
-        try {
-            const whitelist = await getWhitelist();
-            return res.status(200).json(whitelist);
-        } catch (error) {
-            return res.status(500).json({ error: 'Failed to get whitelist' });
+    const productData = whitelist[product];
+
+    // Check if the key exists and has an HWID assigned
+    for (const key in productData.keys) {
+        if (key === userId) {  // Check against user's key
+            const keyData = productData.keys[key];
+            if (keyData.hwid && keyData.hwid !== hwid) {
+                return { status: 'error', message: 'HWID mismatch' }; // HWID is already set
+            }
+
+            // If HWID is not set, assign the current HWID
+            productData.keys[key].hwid = hwid || 'NONE';
+            await updateWhitelist(whitelist);
+            return { status: 'success', message: 'Key redeemed successfully', hwid: productData.keys[key].hwid };
         }
-    } else if (req.method === 'POST') {
+    }
+
+    return { status: 'error', message: 'Key not found or not owned by user' };
+};
+
+// Function to reset HWID for a key
+const resetHwid = async (product, userId, key) => {
+    const whitelist = await getWhitelist();
+
+    if (!whitelist[product]) {
+        throw new Error('Product not found');
+    }
+
+    const productData = whitelist[product];
+
+    if (!productData.keys[key] || productData.keys[key].ownerId !== userId) {
+        return { status: 'error', message: 'You do not have permission to reset HWID for this key' };
+    }
+
+    productData.keys[key].hwid = 'NONE'; // Reset HWID
+    await updateWhitelist(whitelist);
+    return { status: 'success', message: 'HWID has been reset for the key' };
+};
+
+// Main API handler function
+export default async function handler(req, res) {
+    if (req.method === 'POST') {
         const { product, ownerId } = req.body;
 
         try {
             const whitelist = await getWhitelist();
 
             if (!whitelist[product]) {
-                whitelist[product] = {
-                    ownerId: ownerId,
-                    keys: {}
-                };
+                whitelist[product] = { ownerId: ownerId, keys: {} };
+            }
+
+            // Generate keys
+            for (let i = 0; i < 20; i++) {
+                const newKey = generateRandomKey();
+                whitelist[product].keys[newKey] = { ownerId: ownerId, hwid: 'NONE' }; // HWID starts as NONE
             }
 
             await updateWhitelist(whitelist);
-            return res.status(200).json({ status: 'success', message: 'Product created' });
+            return res.status(200).json({ status: 'success', message: 'Product created with keys' });
         } catch (error) {
-            return res.status(500).json({ error: 'Failed to update whitelist' });
-        }
-    } else if (req.method === 'PUT') {
-        const { product, userId } = req.body;
-
-        try {
-            const whitelist = await getWhitelist();
-
-            if (!whitelist[product] || whitelist[product].ownerId !== userId) {
-                return res.status(403).json({ status: 'error', message: 'You do not have permission to create a key for this product' });
-            }
-
-            const newKey = generateRandomKey();
-            whitelist[product].keys[newKey] = 'NOT_SET';
-            await updateWhitelist(whitelist);
-
-            return res.status(200).json({ status: 'success', message: 'Key created', key: newKey });
-        } catch (error) {
-            return res.status(500).json({ error: 'Failed to update whitelist' });
-        }
-    } else if (req.method === 'DELETE') {
-        const { product, key, userId } = req.body;
-
-        try {
-            const whitelist = await getWhitelist();
-
-            if (!whitelist[product] || whitelist[product].ownerId !== userId) {
-                return res.status(403).json({ status: 'error', message: 'You do not have permission to delete this key' });
-            }
-
-            if (whitelist[product] && whitelist[product].keys[key]) {
-                delete whitelist[product].keys[key];
-                await updateWhitelist(whitelist);
-                return res.status(200).json({ status: 'success', message: 'Key removed from whitelist' });
-            } else {
-                return res.status(404).json({ status: 'error', message: 'Key not found' });
-            }
-        } catch (error) {
-            return res.status(500).json({ error: 'Failed to update whitelist' });
+            return res.status(500).json({ error: 'Failed to create product' });
         }
     } else if (req.method === 'PATCH') {
-        const { key, userId } = req.body;
+        const { product, key, userId, hwid } = req.body;
 
         try {
-            const whitelist = await getWhitelist();
-
-            for (const product in whitelist) {
-                if (whitelist[product].keys[key]) {
-                    whitelist[product].keys[key] = userId;
-                    await updateWhitelist(whitelist);
-                    return res.status(200).json({ status: 'success', message: 'Key redeemed successfully' });
-                }
-            }
-
-            return res.status(404).json({ status: 'error', message: 'Key not found' });
+            const result = await redeemKeyWithHwid(product, userId, hwid);
+            return res.status(result.status === 'success' ? 200 : 403).json(result);
         } catch (error) {
             return res.status(500).json({ error: 'Failed to redeem key' });
         }
-    }
+    } else if (req.method === 'PUT') {
+        const { product, key, userId } = req.body;
 
-    return res.status(405).json({ error: 'Only GET, POST, PUT, PATCH, and DELETE requests are allowed' });
+        try {
+            const result = await resetHwid(product, userId, key);
+            return res.status(result.status === 'success' ? 200 : 403).json(result);
+        } catch (error) {
+            return res.status(500).json({ error: 'Failed to reset HWID' });
+        }
+    } else {
+        return res.status(405).json({ error: 'Only POST, PATCH, and PUT requests are allowed' });
+    }
 }
