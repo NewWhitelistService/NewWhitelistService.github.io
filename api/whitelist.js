@@ -1,128 +1,195 @@
-const fs = require('fs');
-const path = require('path');
+import axios from 'axios';
 
-// Path to whitelist.json
-const whitelistPath = path.join(__dirname, 'whitelist.json');
+const REPO_OWNER = 'NewWhitelistService'; // Your GitHub username
+const REPO_NAME = 'NewWhitelistService.github.io'; // Your repository name
+const FILE_PATH = 'whitelist.json'; // The path to your whitelist file
 
-// Load the whitelist
-let whitelist = {};
-if (fs.existsSync(whitelistPath)) {
-    const data = fs.readFileSync(whitelistPath);
-    whitelist = JSON.parse(data);
-}
+const GITHUB_API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Use GitHub token from environment variables
 
-// Function to save the whitelist
-const saveWhitelist = () => {
-    fs.writeFileSync(whitelistPath, JSON.stringify(whitelist, null, 2));
-};
-
-// Handle API requests
-const handler = (req, res) => {
-    const { action, product, owner_id, user_id, api_key, guild_id } = req.body;
-
-    switch (action) {
-        case 'create_product':
-            if (!owner_id) {
-                return res.status(400).json({ error: 'Owner ID is required.' });
-            }
-
-            // Check if product already exists
-            if (whitelist[product]) {
-                return res.status(400).json({ error: 'Product already exists.' });
-            }
-
-            // Create new product
-            whitelist[product] = {
-                owner_id: owner_id,
-                key: null,
-                hwid: null,
-                guilds: []
-            };
-
-            // Save changes
-            saveWhitelist();
-
-            // Generate an API key (simple version)
-            const apiKey = generateApiKey();
-            return res.status(200).json({ message: 'Product created successfully.', api_key: apiKey });
-
-        case 'set_api_key':
-            if (!api_key || !user_id || !guild_id) {
-                return res.status(400).json({ error: 'API key, user ID, and guild ID are required.' });
-            }
-
-            // Find the product
-            const productData = whitelist[product];
-            if (!productData) {
-                return res.status(404).json({ error: 'Product not found.' });
-            }
-
-            // Set user and guild
-            if (productData.owner_id === owner_id) {
-                productData.guilds.push(guild_id);
-                saveWhitelist();
-                return res.status(200).json({ message: 'API key set successfully.' });
-            } else {
-                return res.status(403).json({ error: 'You do not have permission to set this API key.' });
-            }
-
-        case 'create_key':
-            if (!owner_id) {
-                return res.status(400).json({ error: 'Owner ID is required.' });
-            }
-
-            const newKey = generateKey();
-            whitelist[product].key = newKey; // Assign the generated key to the product
-            whitelist[product].hwid = null; // Initially set HWID to null
-            saveWhitelist();
-            return res.status(200).json({ key: newKey });
-
-        case 'redeem_key':
-            if (!user_id) {
-                return res.status(400).json({ error: 'User ID is required.' });
-            }
-
-            if (!whitelist[product]) {
-                return res.status(404).json({ error: 'Product not found.' });
-            }
-
-            const keyData = whitelist[product].key;
-            if (!keyData) {
-                return res.status(404).json({ error: 'No key available for this product.' });
-            }
-
-            // Link the user to the key
-            whitelist[product].hwid = user_id; // Set HWID to user ID
-            saveWhitelist();
-            return res.status(200).json({ message: 'Key redeemed successfully.' });
-
-        case 'resethwid':
-            if (!api_key || !user_id) {
-                return res.status(400).json({ error: 'API key and user ID are required.' });
-            }
-
-            if (whitelist[product].hwid === user_id) {
-                whitelist[product].hwid = null; // Reset HWID
-                saveWhitelist();
-                return res.status(200).json({ message: 'HWID reset successfully.' });
-            } else {
-                return res.status(403).json({ error: 'You do not have permission to reset HWID.' });
-            }
-
-        default:
-            res.status(400).json({ error: 'Invalid action.' });
+// Function to fetch the whitelist.json file
+const getWhitelist = async () => {
+    try {
+        const response = await axios.get(GITHUB_API_URL, {
+            headers: {
+                Authorization: `token ${GITHUB_TOKEN}`,
+            },
+        });
+        const content = Buffer.from(response.data.content, 'base64').toString();
+        return JSON.parse(content);
+    } catch (error) {
+        console.error("Failed to fetch whitelist:", error.response ? error.response.data : error.message);
+        throw error;
     }
 };
 
-// Utility function to generate a random key
-const generateKey = () => {
-    return Math.random().toString(36).substring(2, 22); // 20 character key
+// Function to update the whitelist.json file
+const updateWhitelist = async (newWhitelist) => {
+    try {
+        const response = await axios.get(GITHUB_API_URL, {
+            headers: {
+                Authorization: `token ${GITHUB_TOKEN}`,
+            },
+        });
+
+        const newContent = Buffer.from(JSON.stringify(newWhitelist, null, 2)).toString('base64');
+        const sha = response.data.sha;
+
+        await axios.put(GITHUB_API_URL, {
+            message: 'Update whitelist',
+            content: newContent,
+            sha: sha,
+        }, {
+            headers: {
+                Authorization: `token ${GITHUB_TOKEN}`,
+            },
+        });
+    } catch (error) {
+        console.error("Failed to update whitelist:", error.response ? error.response.data : error.message);
+        throw error;
+    }
 };
 
-// Simple API key generator (for demonstration purposes)
-const generateApiKey = () => {
-    return Math.random().toString(36).substring(2, 12); // Short API key for demo
+// Function to generate a random key
+const generateRandomKey = () => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 20; i++) {
+        const randomIndex = Math.floor(Math.random() * characters.length);
+        result += characters[randomIndex];
+    }
+    return result;
 };
 
-// Export the handler
-module.exports = handler;
+// Function to create a new product
+const createProduct = async (productName, ownerId) => {
+    const whitelist = await getWhitelist();
+    
+    if (!whitelist[productName]) {
+        whitelist[productName] = {
+            ownerId: ownerId,
+            keys: {}
+        };
+        await updateWhitelist(whitelist);
+        return { status: 'success', message: `Product ${productName} created.` };
+    } else {
+        return { status: 'error', message: `Product ${productName} already exists.` };
+    }
+};
+
+// Function to create a key for a product
+const createKey = async (productName) => {
+    const whitelist = await getWhitelist();
+    
+    if (whitelist[productName]) {
+        const newKey = generateRandomKey();
+        whitelist[productName].keys[newKey] = {
+            hwid: null,
+            claimedBy: null,
+            guilds: []
+        };
+        await updateWhitelist(whitelist);
+        return { status: 'success', key: newKey };
+    } else {
+        return { status: 'error', message: `Product ${productName} does not exist.` };
+    }
+};
+
+// Function to redeem a key
+const redeemKey = async (productName, key, userId) => {
+    const whitelist = await getWhitelist();
+
+    if (whitelist[productName] && whitelist[productName].keys[key]) {
+        if (!whitelist[productName].keys[key].claimedBy) {
+            whitelist[productName].keys[key].claimedBy = userId; // Link key with the user
+            await updateWhitelist(whitelist);
+            return { status: 'success', message: 'Key redeemed successfully.' };
+        } else {
+            return { status: 'error', message: 'This key has already been claimed.' };
+        }
+    } else {
+        return { status: 'error', message: 'Invalid product or key.' };
+    }
+};
+
+// Function to check and set HWID for a key
+const checkAndSetHwid = async (productName, key, hwid) => {
+    const whitelist = await getWhitelist();
+
+    // Check if the product and key exist
+    if (whitelist[productName] && whitelist[productName].keys[key]) {
+        const keyInfo = whitelist[productName].keys[key];
+
+        // Check if the key has been claimed
+        if (keyInfo.claimedBy) {
+            // If HWID is already set, compare with the current HWID
+            if (keyInfo.hwid) {
+                if (keyInfo.hwid === hwid) {
+                    return { status: 'success', message: 'HWID matches.' };
+                } else {
+                    return { status: 'error', message: 'HWID does not match. Access denied.' };
+                }
+            } else {
+                // Set HWID if it's not set
+                keyInfo.hwid = hwid;
+                await updateWhitelist(whitelist);
+                return { status: 'success', message: 'HWID has been set.' };
+            }
+        } else {
+            return { status: 'error', message: 'Key must be redeemed before setting HWID.' };
+        }
+    } else {
+        return { status: 'error', message: 'Invalid product or key.' };
+    }
+};
+
+// Function to reset HWID
+const resetHwid = async (productName, key, userId) => {
+    const whitelist = await getWhitelist();
+
+    if (whitelist[productName] && whitelist[productName].keys[key]) {
+        const keyInfo = whitelist[productName].keys[key];
+        
+        if (keyInfo.claimedBy === userId) {
+            keyInfo.hwid = null; // Reset HWID
+            await updateWhitelist(whitelist);
+            return { status: 'success', message: 'HWID has been reset.' };
+        } else {
+            return { status: 'error', message: 'You do not have permission to reset HWID for this key.' };
+        }
+    } else {
+        return { status: 'error', message: 'Invalid product or key.' };
+    }
+};
+
+// Main handler
+export default async function handler(req, res) {
+    if (req.method === 'POST') {
+        const { action, productName, userId, key, hwid } = req.body;
+
+        try {
+            if (action === 'createProduct') {
+                const result = await createProduct(productName, userId);
+                return res.status(200).json(result);
+            } else if (action === 'createKey') {
+                const result = await createKey(productName);
+                return res.status(200).json(result);
+            } else if (action === 'redeemKey') {
+                const result = await redeemKey(productName, key, userId);
+                return res.status(200).json(result);
+            } else if (action === 'checkAndSetHwid') {
+                const result = await checkAndSetHwid(productName, key, hwid);
+                return res.status(200).json(result);
+            } else if (action === 'resetHwid') {
+                const result = await resetHwid(productName, key, userId);
+                return res.status(200).json(result);
+            } else {
+                return res.status(400).json({ status: 'error', message: 'Invalid action.' });
+            }
+        } catch (error) {
+            return res.status(500).json({ error: error.message });
+        }
+    } else {
+        return res.status(405).json({ error: 'Only POST requests are allowed' });
+    }
+}
