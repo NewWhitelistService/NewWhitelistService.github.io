@@ -61,6 +61,7 @@ const generateRandomKey = () => {
     return result;
 };
 
+// Function to create a new product with an API key
 const createProduct = async (productName) => {
     const whitelist = await getWhitelist();
     
@@ -180,7 +181,7 @@ export default async function handler(req, res) {
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(apiKey); // apiKey is the product name
+                const result = await createProduct(productName); // apiKey is the product name
                 return res.status(200).json(result);
             } else if (action === 'setApiKey') {
                 const result = await setApiKey(apiKey, userId, guildId);
