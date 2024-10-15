@@ -78,6 +78,7 @@ const createProduct = async (productName) => {
         return { status: 'error', message: `Product ${productName} already exists.` };
     }
 };
+
 // Function to set API key and assign ownerId and guildId
 const setApiKey = async (apiKey, userId, guildId) => {
     const whitelist = await getWhitelist();
@@ -174,6 +175,36 @@ const checkAndSetHwid = async (key, hwid, productName) => {
     }
 };
 
+// Function to redeem a key for a user
+const redeemKey = async (key, userId) => {
+    const whitelist = await getWhitelist();
+
+    // Check if any product contains the key
+    for (const productName in whitelist) {
+        const keys = whitelist[productName].keys;
+
+        if (keys[key]) {
+            // Check if the key is already claimed
+            if (keys[key].claimedBy) {
+                return { status: 'error', message: 'Key already claimed.' };
+            }
+
+            // Check if the user has already claimed a key for this product
+            const alreadyClaimed = Object.keys(keys).some(existingKey => keys[existingKey].claimedBy === userId);
+            if (alreadyClaimed) {
+                return { status: 'error', message: 'You can only redeem one key per product.' };
+            }
+
+            // Claim the key for the user
+            keys[key].claimedBy = userId; // Set the user ID as the claimant
+            await updateWhitelist(whitelist);
+            return { status: 'success', message: 'Key redeemed successfully.' };
+        }
+    }
+
+    return { status: 'error', message: 'Invalid key.' };
+};
+
 // Main API handler
 export default async function handler(req, res) {
     if (req.method === 'POST') {
@@ -181,7 +212,7 @@ export default async function handler(req, res) {
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(productName); // apiKey is the product name
+                const result = await createProduct(productName);
                 return res.status(200).json(result);
             } else if (action === 'setApiKey') {
                 const result = await setApiKey(apiKey, userId, guildId);
@@ -194,6 +225,9 @@ export default async function handler(req, res) {
                 return res.status(200).json(result);
             } else if (action === 'checkAndSetHwid') {
                 const result = await checkAndSetHwid(key, hwid, productName);
+                return res.status(200).json(result);
+            } else if (action === 'redeemKey') { // Added redeemKey action
+                const result = await redeemKey(key, userId);
                 return res.status(200).json(result);
             } else {
                 return res.status(400).json({ status: 'error', message: 'Invalid action.' });
