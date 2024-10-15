@@ -78,7 +78,6 @@ const createProduct = async (productName) => {
         return { status: 'error', message: `Product ${productName} already exists.` };
     }
 };
-
 // Function to set API key and assign ownerId and guildId
 const setApiKey = async (apiKey, userId, guildId) => {
     const whitelist = await getWhitelist();
@@ -87,12 +86,17 @@ const setApiKey = async (apiKey, userId, guildId) => {
     const productName = Object.keys(whitelist).find(product => whitelist[product].apiKey === apiKey);
 
     if (productName) {
+        // Check if the ownerId is already set
+        if (whitelist[productName].ownerId) {
+            return { status: 'error', message: 'Already has owner.' };
+        }
+        
         whitelist[productName].ownerId = userId; // Set the owner ID
         whitelist[productName].guildId = guildId; // Set the guild ID
         await updateWhitelist(whitelist);
-        return { status: 'success' }; // Return success
+        return { status: 'success', message: 'API key set successfully.' };
     } else {
-        return { status: 'error' }; // Invalid API key
+        return { status: 'error', message: 'Invalid API key.' };
     }
 };
 
