@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whitelist System</title>
+    <script>
+        async function checkWhitelist() {
+            const hwid = document.getElementById("hwid").value;
+            const scriptKey = document.getElementById("scriptKey").value;
+
+            const response = await fetch('/check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ hwid, scriptKey })
+            });
+
+            const result = await response.json();
+            const message = result.allowed ? "Access granted." : "Access denied.";
+            document.getElementById("result").innerText = message;
+        }
+    </script>
+</head>
+<body>
+    <h1>Whitelist System</h1>
+    <label for="hwid">HWID:</label>
+    <input type="text" id="hwid" required><br><br>
+    <label for="scriptKey">Script Key:</label>
+    <input type="text" id="scriptKey" required><br><br>
+    <button onclick="checkWhitelist()">Check Access</button>
+    <p id="result"></p>
+</body>
+</html>
