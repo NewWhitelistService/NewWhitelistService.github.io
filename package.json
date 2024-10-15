@@ -4,6 +4,7 @@
   "description": "API for managing whitelist entries",
   "main": "api/whitelist.js",
   "type": "module",
+  "scripts": {
     "dev": "vercel dev"
   },
   "dependencies": {
