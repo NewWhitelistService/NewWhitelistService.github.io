@@ -62,16 +62,18 @@ const generateRandomKey = () => {
 };
 
 // Function to create a new product
-const createProduct = async (productName, ownerId) => {
+const createProduct = async (productName) => {
     const whitelist = await getWhitelist();
     
     if (!whitelist[productName]) {
+        const newApiKey = generateRandomKey(); // Generate a new API key
         whitelist[productName] = {
-            ownerId: ownerId,
-            keys: {}
+            apiKey: newApiKey, // Save the API key under the product name
+            keys: {},
+            guilds: [] // Initialize guilds array if needed
         };
         await updateWhitelist(whitelist);
-        return { status: 'success', message: `Product ${productName} created.` };
+        return { status: 'success', message: `Product ${productName} created. API Key: ${newApiKey}` };
     } else {
         return { status: 'error', message: `Product ${productName} already exists.` };
     }
@@ -85,7 +87,7 @@ const createKey = async (productName) => {
         const newKey = generateRandomKey();
         whitelist[productName].keys[newKey] = {
             hwid: null,
-            claimedBy: null,
+            claimedBy: null, // This will store the user ID of the person who redeems the key
             guilds: []
         };
         await updateWhitelist(whitelist);
@@ -100,12 +102,15 @@ const redeemKey = async (productName, key, userId) => {
     const whitelist = await getWhitelist();
 
     if (whitelist[productName] && whitelist[productName].keys[key]) {
-        if (!whitelist[productName].keys[key].claimedBy) {
-            whitelist[productName].keys[key].claimedBy = userId; // Link key with the user
+        const keyInfo = whitelist[productName].keys[key];
+
+        if (!keyInfo.claimedBy) {
+            // Link the key with the user ID
+            keyInfo.claimedBy = userId; 
             await updateWhitelist(whitelist);
             return { status: 'success', message: 'Key redeemed successfully.' };
         } else {
-            return { status: 'error', message: 'This key has already been claimed.' };
+            return { status: 'error', message: 'This key has already been claimed by another user.' };
         }
     } else {
         return { status: 'error', message: 'Invalid product or key.' };
@@ -169,7 +174,7 @@ export default async function handler(req, res) {
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(productName, userId);
+                const result = await createProduct(productName);
                 return res.status(200).json(result);
             } else if (action === 'createKey') {
                 const result = await createKey(productName);
@@ -190,6 +195,6 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: error.message });
         }
     } else {
-        return res.status(405).json({ error: 'Only POST requests are allowed' });
+        return res.status(405).json({ error: 'GET OUT' });
     }
 }
