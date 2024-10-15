@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto'; // Import crypto for API key generation
 
 const REPO_OWNER = 'NewWhitelistService'; // Your GitHub username
 const REPO_NAME = 'NewWhitelistService.github.io'; // Your repository name
@@ -50,7 +51,60 @@ const updateWhitelist = async (newWhitelist) => {
     }
 };
 
-// Function to generate a random key
+// Function to generate a random API key
+const generateApiKey = () => {
+    return crypto.randomBytes(16).toString('hex'); // Generates a 32-character hex string
+};
+
+// Function to get the product name by API key
+const getProductByApiKey = async (apiKey) => {
+    const whitelist = await getWhitelist();
+    
+    for (const productName in whitelist) {
+        if (whitelist[productName].apiKey === apiKey) {
+            return productName;
+        }
+    }
+    
+    return null; // Return null if the API key is not found
+};
+
+// Function to create a new product
+const createProduct = async (productName, ownerId) => {
+    const whitelist = await getWhitelist();
+    
+    if (!whitelist[productName]) {
+        const apiKey = generateApiKey(); // Generate a new API key
+        whitelist[productName] = {
+            ownerId: ownerId,
+            keys: {},
+            apiKey: apiKey // Set the API key
+        };
+        await updateWhitelist(whitelist);
+        return { 
+            status: 'success', 
+            message: `Product ${productName} created.`,
+            APIKEY: apiKey // Return the generated API key
+        };
+    } else {
+        return { status: 'error', message: `Product ${productName} already exists.` };
+    }
+};
+
+// Function to set the API key for a product
+const setApiKey = async (productName, apiKey) => {
+    const whitelist = await getWhitelist();
+    
+    if (whitelist[productName]) {
+        whitelist[productName].apiKey = apiKey; // Set the API key
+        await updateWhitelist(whitelist);
+        return { status: 'success', message: `API Key set for product ${productName}.` };
+    } else {
+        return { status: 'error', message: `Product ${productName} does not exist.` };
+    }
+};
+
+// Function to create a random key
 const generateRandomKey = () => {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
@@ -61,24 +115,6 @@ const generateRandomKey = () => {
     return result;
 };
 
-// Function to create a new product
-const createProduct = async (productName) => {
-    const whitelist = await getWhitelist();
-    
-    if (!whitelist[productName]) {
-        const newApiKey = generateRandomKey(); // Generate a new API key
-        whitelist[productName] = {
-            apiKey: newApiKey, // Save the API key under the product name
-            keys: {},
-            guilds: [] // Initialize guilds array if needed
-        };
-        await updateWhitelist(whitelist);
-        return { status: 'success', message: `Product ${productName} created. API Key: ${newApiKey}` };
-    } else {
-        return { status: 'error', message: `Product ${productName} already exists.` };
-    }
-};
-
 // Function to create a key for a product
 const createKey = async (productName) => {
     const whitelist = await getWhitelist();
@@ -87,7 +123,7 @@ const createKey = async (productName) => {
         const newKey = generateRandomKey();
         whitelist[productName].keys[newKey] = {
             hwid: null,
-            claimedBy: null, // This will store the user ID of the person who redeems the key
+            claimedBy: null,
             guilds: []
         };
         await updateWhitelist(whitelist);
@@ -102,15 +138,12 @@ const redeemKey = async (productName, key, userId) => {
     const whitelist = await getWhitelist();
 
     if (whitelist[productName] && whitelist[productName].keys[key]) {
-        const keyInfo = whitelist[productName].keys[key];
-
-        if (!keyInfo.claimedBy) {
-            // Link the key with the user ID
-            keyInfo.claimedBy = userId; 
+        if (!whitelist[productName].keys[key].claimedBy) {
+            whitelist[productName].keys[key].claimedBy = userId; // Link key with the user
             await updateWhitelist(whitelist);
             return { status: 'success', message: 'Key redeemed successfully.' };
         } else {
-            return { status: 'error', message: 'This key has already been claimed by another user.' };
+            return { status: 'error', message: 'This key has already been claimed.' };
         }
     } else {
         return { status: 'error', message: 'Invalid product or key.' };
@@ -170,11 +203,14 @@ const resetHwid = async (productName, key, userId) => {
 // Main handler
 export default async function handler(req, res) {
     if (req.method === 'POST') {
-        const { action, productName, userId, key, hwid } = req.body;
+        const { action, productName, userId, key, hwid, apiKey } = req.body;
 
         try {
             if (action === 'createProduct') {
-                const result = await createProduct(productName);
+                const result = await createProduct(productName, userId);
+                return res.status(200).json(result);
+            } else if (action === 'setApiKey') {
+                const result = await setApiKey(productName, apiKey);
                 return res.status(200).json(result);
             } else if (action === 'createKey') {
                 const result = await createKey(productName);
@@ -188,6 +224,13 @@ export default async function handler(req, res) {
             } else if (action === 'resetHwid') {
                 const result = await resetHwid(productName, key, userId);
                 return res.status(200).json(result);
+            } else if (action === 'getProductByApiKey') {
+                const result = await getProductByApiKey(apiKey);
+                if (result) {
+                    return res.status(200).json({ status: 'success', productName: result });
+                } else {
+                    return res.status(404).json({ status: 'error', message: 'API Key not found.' });
+                }
             } else {
                 return res.status(400).json({ status: 'error', message: 'Invalid action.' });
             }
@@ -195,6 +238,6 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: error.message });
         }
     } else {
-        return res.status(405).json({ error: 'GET OUT' });
+        return res.status(405).json({ error: 'Only POST requests are allowed' });
     }
 }
