@@ -236,6 +236,6 @@ export default async function handler(req, res) {
             return res.status(500).json({ status: 'error', message: error.message });
         }
     } else {
-        return res.status(405).json({ status: 'error', message: 'Only POST requests are allowed' });
+        return res.status(405).json({ status: 'error', message: 'why u here' });
     }
 }
